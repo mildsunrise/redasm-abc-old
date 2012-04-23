@@ -9,4 +9,12 @@ public class RABCDasmException extends Exception {
         this.code = code;
         this.out = out;
     }
+
+    public int getCode() {
+        return code;
+    }
+
+    public String getOut() {
+        return out;
+    }
 }
