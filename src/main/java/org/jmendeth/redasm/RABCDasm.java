@@ -6,8 +6,9 @@ import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Objects;
+import static org.fusesource.jansi.Ansi.*;
 import org.apache.commons.io.IOUtils;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * Utilities for interacting with RABCDasm.
@@ -45,23 +46,61 @@ public class RABCDasm {
 
     public static Process executeCommand(String command, String... args) throws IOException {
         List<String> cm = new ArrayList<>(Arrays.asList(args));
+        cm.add(0, command);
         ProcessBuilder pb = new ProcessBuilder(cm);
         return pb.start();
     }
 
+    public static final String STACKTRACE_SEPARATOR = "----------------";
     public static void runCommand(String command, String msg, String... args) throws IOException, RABCDasmException {
         try {
-            Process pr = executeCommand(command, args);
+            final StringWriter out = new StringWriter();
+            final Process pr = executeCommand(command, args);
+            Thread errcp = new Thread(new Runnable() {
+
+                @Override
+                public void run() {
+                    try {
+                        IOUtils.copy(pr.getErrorStream(), out);
+                    } catch (IOException ex) {}
+                }
+            });
+            Thread outcp = new Thread(new Runnable() {
+
+                @Override
+                public void run() {
+                    try {
+                        IOUtils.copy(pr.getInputStream(), out);
+                    } catch (IOException ex) {}
+                }
+            });
+            errcp.start();
+            outcp.start();
+            
             int status;
             while (true)
                 try {
                     status = pr.waitFor();
                     break;
                 } catch (InterruptedException ex) {}
+            while (true)
+                try {
+                    errcp.join();
+                    break;
+                } catch (InterruptedException ex) {}
+            while (true)
+                try {
+                    outcp.join();
+                    break;
+                } catch (InterruptedException ex) {}
             if (status == 0) return;
-            StringWriter out = new StringWriter();
-            IOUtils.copy(pr.getInputStream(), out);
-            throw new RABCDasmException(status, out.toString(), msg);
+
+            //Try to find the stacktrace
+            final String outs = out.toString();
+            List<String> lines = new ArrayList<>(Arrays.asList(outs.split("\r?\n")));//FIXME
+            String msgS = StringUtils.join(lines.subList(0, lines.indexOf(STACKTRACE_SEPARATOR)), "\n");
+            msgS = msgS.substring(msgS.indexOf(":")+2);
+            throw new RABCDasmException(status, outs, msg+ansi().newline().bold().a(msgS).boldOff());
         } catch (IOException ex) {
             throw new IOException("When executing "+command+": "+ex.getMessage(), ex);
         }
