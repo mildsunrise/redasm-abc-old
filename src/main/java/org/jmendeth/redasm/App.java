@@ -17,6 +17,9 @@ import org.fusesource.jansi.AnsiConsole;
  */
 public class App {
 
+    static final boolean debug = false;
+    static boolean showStacks = debug;
+
     //CONSTANTS --don't modify or it'll break compatibility
     public static final String ROOT_MARKER   = ".redasm";
     public static final String TAG_MARKER    = ".redasm-tag";
@@ -37,8 +40,10 @@ public class App {
     static Boolean initial;
     static File build;
     static Map<Integer, String> tags;
+    static List<File> blocks;
 
     public static void main(String[] args) {
+        //FIXME: add clean, quiet and verbose options
 
         //INITIALIZE ANSI
         AnsiConsole.systemInstall();
@@ -57,6 +62,11 @@ public class App {
         //DETERMINE ROOT
         determineRoot();
 
+        if (initial) {
+            //FIXME: add shutdown-hook
+            System.out.println(ansi().fg(Color.YELLOW).a("First run, creating files...").reset().a("\n"));
+        }
+
         //LOCK MARKER FILE
         try (FileChannel marker = FileChannel.open(rootmark.toPath(), StandardOpenOption.READ, StandardOpenOption.WRITE, StandardOpenOption.CREATE)) {
             final FileLock lock = marker.tryLock();
@@ -69,13 +79,47 @@ public class App {
             try {
                 if (initial) {
                     //INITIALIZE ROOT
-                    assertFS(build.mkdirs(), "creating the build directory");
 
-                    
+                    //Create build directory
+                    runProcess(new RunTarget() {
+                        @Override
+                        public void run() throws Throwable {
+                            assertFS(build.mkdirs(), "creating the build directory");
+                        }
+                    }, "Creating build directory...");
 
+                    //Extract ABC blocks
+                    final File pref = new File(build, "block-");
+
+                    runProcess(new RunTarget() {
+                        @Override
+                        public void run() throws Throwable {
+                           blocks = RABCDasm.export(swf, pref);
+                        }
+                    }, "Extracting ABC blocks...");
+
+                    if (blocks.isEmpty()) {
+                        printError("Error", "It seems the SWF contains no ActionScript blocks.\nNothing to disassemble. Exiting.");
+                        System.exit(NO_TAGS_FOUND_STATUS);
+                    }
+
+                    //If there's only one block (most cases) rename it
+                    if (blocks.size() == 1) {
+                        File bl = blocks.get(0);
+                        File nbl = new File(bl.getParent(), "block.abc");
+                        assertFS(bl.renameTo(nbl), "renaming block file");
+                        blocks.set(0, nbl);
+                    }
+
+                    //Disassemble ABC blocks
+                    //TODO
+
+                    //Finally, mark directory as initialized
+                    initial = false;
                 } else {
                     //MAIN BUILD PROCESS
                 }
+                System.out.println(ansi().fg(Color.GREEN).bold().a("Finished correctly.").reset().newline());
             } finally {
                 lock.release();
             }
@@ -86,8 +130,11 @@ public class App {
             printError("FS error", ex.getLocalizedMessage());
             System.exit(FILE_ERROR_STATUS);
         } catch (RABCDasmException ex) {
-            printError("RABCDasm error", ex.getMessage());
-            //FIXME: print output
+            printError("RABCDasm error", ex.getMessage() + " (Status "+ex.getCode()+")");
+            if (showStacks) {
+                AnsiConsole.err.println(ex.getOut());
+            }
+            System.exit(RABCDASM_ERROR_STATUS);
         } catch (Throwable t) {
             printError("Unknown exception", t.getLocalizedMessage());
             t.printStackTrace();
@@ -200,4 +247,22 @@ public class App {
         AnsiConsole.err.print(ansi().reset());
     }
 
+    static final String done_msg = ansi().fg(Color.GREEN).a("done.").toString();
+    static final String failed_msg = ansi().fg(Color.RED).a("failed!").toString();
+    public static void runProcess(RunTarget target, String msg) throws Throwable {
+        boolean done = false;
+        System.out.print(ansi().fg(Color.WHITE).a(msg));
+        try {
+            System.out.flush();
+            target.run();
+            done = true;
+        } finally {
+            System.out.println(ansi().a(" ").a(done? done_msg : failed_msg).reset());
+        }
+    }
+
+    public static interface RunTarget {
+        public void run() throws Throwable;
+    }
+    
 }
