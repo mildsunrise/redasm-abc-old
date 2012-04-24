@@ -1,12 +1,10 @@
 package org.jmendeth.redasm;
 
-import java.util.*;
-
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.nio.channels.*;
 import java.nio.file.StandardOpenOption;
 
+import java.util.*;
 import org.apache.commons.lang3.StringUtils;
 
 import static org.fusesource.jansi.Ansi.*;
@@ -39,8 +37,8 @@ public class App {
     static File swf;
     static Boolean initial;
     static File build;
-    static Map<Integer, String> tags;
-    static List<File> blocks;
+    static Map<Integer, BlockInfo> tags;//FIXME: we should use Set and hashmap() here
+    public static final Properties settings = new Properties();
 
     public static void main(String[] args) {
         //FIXME: add clean, quiet and verbose options
@@ -64,7 +62,7 @@ public class App {
 
         if (initial) {
             //FIXME: add shutdown-hook
-            System.out.println(ansi().fg(Color.YELLOW).a("First run, creating files...").reset().a("\n"));
+            System.out.println(ansi().fg(Color.YELLOW).a("First run, creating files...").reset());
         }
 
         //LOCK MARKER FILE
@@ -90,11 +88,12 @@ public class App {
 
                     //Extract ABC blocks
                     final File pref = new File(build, "block-");
+                    final List<File> blocks = new ArrayList<>();
 
                     runProcess(new RunTarget() {
                         @Override
                         public void run() throws Throwable {
-                           blocks = RABCDasm.export(swf, pref);
+                           blocks.addAll(RABCDasm.export(swf, pref));
                         }
                     }, "Extracting ABC blocks...");
 
@@ -112,16 +111,107 @@ public class App {
                     }
 
                     //Disassemble ABC blocks
-                    //TODO
+                    for (int i = 0; i < blocks.size(); i++) {
+                        //Determine block file and output directory
+                        final File block = blocks.get(i);
+                        String bname = block.getName();
+                        bname = bname.substring(0, bname.length()-4);
+                        final File bdir = new File(root, bname);
+                        final File bmark = new File(bdir, TAG_MARKER);
+
+                        //Disassemble
+                        //FIXME: an ugly trick to communicate with child thread
+                        final File[] mw = new File[1];
+                        runTaggedProcess(new RunTarget() {
+                            @Override
+                            public void run() throws Throwable {
+                                mw[0] = RABCDasm.disassemble(block, bdir);
+                            }
+                        }, "disassembling...", i);
+
+                        //Write tag marker
+                        Properties pr = new Properties();
+                        pr.setProperty("block.idx", Objects.toString(i));
+                        pr.setProperty("block.assembly", build.toPath().relativize(block.toPath()).toString());
+
+                        try (FileWriter w = new FileWriter(bmark)) {
+                            pr.store(w, " WARNING: DO NOT REMOVE, RENAME, COPY OR MODIFY THIS FILE\n UNLESS YOU KNOW WHAT YOU'RE DOING!");
+                        }
+
+                        settings.setProperty(i+".lastcompile", Long.toString(lastModifiedRecurse(bdir)));//FIXME: distinguish from 0L
+                    }
 
                     //Finally, mark directory as initialized
                     initial = false;
                 } else {
+                    //Load previous settings
+                    marker.position(0); //Rewind to start
+                    settings.load(Channels.newInputStream(marker));
+
                     //MAIN BUILD PROCESS
+                    tags = new HashMap<>();
+                    //Explore directories and populate tag map
+                    for (File ch : root.listFiles()) {
+                        if (!ch.isDirectory()) continue;
+                        if (ch.equals(build)) continue;
+
+                        File bmark = new File(ch, TAG_MARKER);
+                        if (!bmark.isFile()) continue;
+
+                        Properties pr = new Properties();
+                        try (FileInputStream in = new FileInputStream(bmark)) {
+                            pr.load(in);
+                        }
+                        
+                        int idx = Integer.parseInt(pr.getProperty("block.idx"));
+                        String blockn = pr.getProperty("block.assembly");
+                        File block = build.toPath().resolve(blockn).toFile();
+                        Long actualtime = lastModifiedRecurse(ch);
+                        if (actualtime == 0L) actualtime = null;
+                        String recomp_str = settings.getProperty(idx+".lastcompile");
+                        Long recomptime = null;
+                        if (recomp_str != null) recomptime = Long.parseLong(recomp_str);
+                        
+                        //Put entry into the tag map
+                        tags.put(idx, new BlockInfo(ch, block, idx, recomptime, actualtime));
+                    }
+
+                    //Loop over sorted indexes and perform actions
+                    Integer[] idxs = tags.keySet().toArray(new Integer[0]);
+                    Arrays.sort(idxs);
+                    for (Integer idx : idxs) {
+                        final BlockInfo info = tags.get(idx);
+
+                        if (!info.hasChanged()) {
+                            printStatus(idx, ansi().fg(Color.GREEN).a("up-to-date.").toString());
+                            continue;
+                        }
+
+                        //FIXME: add support for ignore
+
+                        printStatus(idx, ansi().fg(Color.YELLOW).a("has changed.").toString());
+                        final int i = idx;
+                        //TODO: assembly
+                        runProcess(new RunTarget() {
+                            @Override
+                            public void run() throws Throwable {
+                                RABCDasm.replace(swf, i, info.getBlock());
+                            }
+                        }, "Replacing in SWF...");
+
+                        settings.setProperty(idx+".lastcompile", Long.toString(lastModifiedRecurse(info.getDir())));
+                    }
                 }
-                System.out.println(ansi().fg(Color.GREEN).bold().a("Finished correctly.").reset().newline());
+
+                System.out.println(ansi().fg(Color.GREEN).bold().a("Finished correctly.").reset());
+
             } finally {
-                lock.release();
+                try {
+                    //Dump properties
+                    marker.position(0); //Rewind to start
+                    settings.store(Channels.newOutputStream(marker),
+                            " WARNING: DO NOT REMOVE, RENAME, COPY OR MODIFY THIS FILE\n UNLESS YOU KNOW WHAT YOU'RE DOING!");
+                } finally {lock.release();}
             }
         } catch (IOException ex) {
             printError("I/O error", ex.getLocalizedMessage());
@@ -142,6 +232,18 @@ public class App {
         }
     }
 
+    public static void printStatus(int idx, String status) {
+        System.out.println(ansi().fg(Color.WHITE).bold().a("Block "+idx+":").boldOff().a(" "+status).reset());
+    }
+
+    private static long lastModifiedRecurse(File f) {
+        long ret = f.lastModified();
+        if (f.isDirectory())
+            for (File ch : f.listFiles())
+                ret = Math.max(ret, lastModifiedRecurse(ch));
+        return ret;
+    }
+
     public static class FsException extends Exception {
         public FsException(Throwable cause) {
             super(cause);
@@ -153,6 +255,10 @@ public class App {
             super(message);
         }
         public FsException() {}
+    }
+
+    public static void runTaggedProcess(RunTarget target, String msg, int tag) throws Throwable {
+        runProcess(target, ansi().bold().a("Block "+tag+":").boldOff().a(" ").a(msg).toString());
     }
 
     public static void assertFS(boolean i, String fnc) throws FsException {
@@ -264,5 +370,5 @@ public class App {
     public static interface RunTarget {
         public void run() throws Throwable;
     }
-    
+
 }
