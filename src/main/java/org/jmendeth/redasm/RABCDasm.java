@@ -21,7 +21,8 @@ public class RABCDasm {
     public static final String ASSM_COMMAND    = "rabcasm";
 
     public static List<File> export(File swf, File pref) throws IOException, RABCDasmException {
-        runCommand(EXPORT_COMMAND, "Error when exporting ABC blocks.", swf.getPath(), pref.getPath());
+        runCommand(EXPORT_COMMAND, "Error when exporting ABC blocks.",
+                swf.getPath(), pref.getPath());
         List<File> ret = new ArrayList<>();
         for (int i=0; true; i++) {
             File ch = new File(pref.getPath()+i+".abc");
@@ -36,8 +37,11 @@ public class RABCDasm {
                 swf.getPath(), String.valueOf(idx), abc.getPath());
     }
 
-    public static void disassemble(File abc, File dir) {
-        //TODO
+    public static File disassemble(File abc, File dir) throws IOException, RABCDasmException {
+        runCommand(DISASSM_COMMAND, "Error when disassembling ABC block.",
+                abc.getPath(), dir.getPath());
+        final String main = dir.getName()+".main.asasm";
+        return new File(dir, main);
     }
 
     public static void assemble(File dirmain, File abc) {
