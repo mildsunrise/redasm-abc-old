@@ -101,7 +101,7 @@ public class RABCDasm {
 
             //Try to find the stacktrace
             final String outs = out.toString();
-            List<String> lines = new ArrayList<>(Arrays.asList(outs.split("\r?\n")));//FIXME
+            List<String> lines = new ArrayList<>(Arrays.asList(outs.split("\n")));
             String msgS = StringUtils.join(lines.subList(0, lines.indexOf(STACKTRACE_SEPARATOR)), "\n");
             msgS = msgS.substring(msgS.indexOf(":")+2);
             throw new RABCDasmException(status, outs, msg+ansi().newline().bold().a(msgS).boldOff());
