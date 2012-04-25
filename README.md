@@ -1,4 +1,4 @@
-k# Robust, Easy [Dis-]Assembler for ActionScript Bytecode
+# Robust, Easy [Dis-]Assembler for ActionScript Bytecode
 
 ## Introduction
 
