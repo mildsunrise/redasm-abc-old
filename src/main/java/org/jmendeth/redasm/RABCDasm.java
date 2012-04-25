@@ -44,8 +44,9 @@ public class RABCDasm {
         return new File(dir, main);
     }
 
-    public static void assemble(File dirmain, File abc) {
-        //TODO
+    public static void assemble(File dirmain, File abc) throws IOException, RABCDasmException {
+        runCommand(ASSM_COMMAND, "Error when assembling ABC block.",
+                dirmain.getPath(), abc.getPath());
     }
 
     public static Process executeCommand(String command, String... args) throws IOException {
