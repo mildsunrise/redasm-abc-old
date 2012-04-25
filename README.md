@@ -1,6 +1,4 @@
-# Robust, Easy [Dis-]Assembler for ActionScript Bytecode
-
-**NOTE:** Work still in progress! Will be published soon. Stay tuned!
+k# Robust, Easy [Dis-]Assembler for ActionScript Bytecode
 
 ## Introduction
 
@@ -30,22 +28,14 @@ $ abcreplace file.swf 2 file-0/file-2.main.abc
 
 ```bash
 $ redasm
-First-run, extracting file.swf... done.
-3 ABC tags were found in the SWF.
-
 $ # edit what you want...
 $ redasm
-Checking changed files... done.
-Tag 0: assembling... done.
-       replacing...  done.
-Tag 1: up-to-date.
-Tag 2: assembling... done.
-       replacing...  done.
-
-Done!
 ```
 
 ## Installation
+
+You need a Java 7 JDK to run redasm-abc,  
+and a [D compiler](http://dlang.org) to build RABCDasm.
 
 TODO
 
@@ -56,7 +46,7 @@ Then run `redasm` to extract all his ABC blocks and disassemble them.
 Edit what you want, then run `redasm` again to apply the changes to the SWF.
 
 redasm-abc will create a directory for each disassembled ABC block.  
-By default, the directories are named `file-0`, `file-1`, `file-2`, ...  
+By default, the directories are named `block-0`, `block-1`, `block-2`, ...  
 but you are free to **rename** them to your needs.
 
 **Important:** redasm-abc will also create a directory named `build`, where the
