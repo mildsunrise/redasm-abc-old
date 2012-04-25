@@ -93,7 +93,7 @@ public class App {
                     runProcess(new RunTarget() {
                         @Override
                         public void run() throws Throwable {
-                           blocks.addAll(RABCDasm.export(swf, pref));
+                           blocks.addAll(RABCDasm.export(swf, pref, root));
                         }
                     }, "Extracting ABC blocks...");
 
@@ -120,12 +120,10 @@ public class App {
                         final File bmark = new File(bdir, TAG_MARKER);
 
                         //Disassemble
-                        //FIXME: an ugly trick to communicate with child thread
-                        final File[] mw = new File[1];
                         runTaggedProcess(new RunTarget() {
                             @Override
                             public void run() throws Throwable {
-                                mw[0] = RABCDasm.disassemble(block, bdir);
+                                RABCDasm.disassemble(block, bdir, root);
                             }
                         }, "disassembling...", i);
 
@@ -190,15 +188,30 @@ public class App {
                         //FIXME: add support for ignore
 
                         printStatus(idx, ansi().fg(Color.YELLOW).a("has changed.").toString());
+
+                        //Search main file
+                        final File mainfile = searchMainFile(info.getDir());
+                        if (mainfile == null) {
+                            printError("Error", "Could not find main file. Skipping.");
+                            continue;
+                        }
+
+                        //Assemble + replace
                         final int i = idx;
-                        //TODO: assembly
                         runProcess(new RunTarget() {
                             @Override
                             public void run() throws Throwable {
-                                RABCDasm.replace(swf, i, info.getBlock());
+                                RABCDasm.assemble(mainfile, info.getBlock(), root);
+                            }
+                        }, "Assembling...");
+                        runProcess(new RunTarget() {
+                            @Override
+                            public void run() throws Throwable {
+                                RABCDasm.replace(swf, i, info.getBlock(), root);
                             }
                         }, "Replacing in SWF...");
 
+                        //Update time
                         settings.setProperty(idx+".lastcompile", Long.toString(lastModifiedRecurse(info.getDir())));
                     }
                 }
@@ -242,6 +255,15 @@ public class App {
             for (File ch : f.listFiles())
                 ret = Math.max(ret, lastModifiedRecurse(ch));
         return ret;
+    }
+
+    public static File searchMainFile(File dir) {
+        for (File ch : dir.listFiles()) {
+            if (!ch.isFile()) continue;
+            if (hasExtension(ch.getName(), ".main.asasm"))
+                return ch;
+        }
+        return null;
     }
 
     public static class FsException extends Exception {
