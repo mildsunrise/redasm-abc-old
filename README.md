@@ -1,5 +1,8 @@
 # Robust, Easy [Dis-]Assembler for ActionScript Bytecode
 
+**Deprecated:** please use [the new redasm-abc](https://github.com/jmendeth/redasm-abc): same usage,
+easier to build, faster, smaller.
+
 ## Introduction
 
 Did you know **[RABCDasm](https://github.com/CyberShadow/RABCDAsm)**, the robust ActionScript (dis)assembler?  
